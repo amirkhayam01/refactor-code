@@ -43,6 +43,7 @@ The original `BookingController.php` and `BookingRepository.php` were functionin
 ### What can be improved
 
 Some functions are still in the `BookingRepository`. These should be moved to their respective services and repositories to complete the refactoring process.
+Additionally, `try-catch` blocks should be to handle exceptions gracefully and prevent the code from breaking.
 
 ---
 
