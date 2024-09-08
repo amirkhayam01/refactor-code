@@ -2,13 +2,22 @@
 
 namespace DTApi\Services;
 
-use Validator;
-use Illuminate\Database\Eloquent\Model;
-use DTApi\Exceptions\ValidationException;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
+use DTApi\Repository\UserRepository;
 
 class UserService
 {
+
+    public $userRepository;
+    public function __construct(UserRepository $userRepository)
+    {
+        $this->userRepository = $userRepository;
+    }
+
+    public function isSuperAdmin($user)
+    {
+        return $user && $user->user_type == env('SUPERADMIN_ROLE_ID');
+    }
+
 
     public function isAdminOrSuperAdmin($userType)
     {
@@ -19,11 +28,45 @@ class UserService
     }
 
 
+    public function isCustomer($user)
+    {
+        return $user && $user->is('customer');
+    }
+
+
+    public function isTranslator($user)
+    {
+        return $user && $user->is('translator');
+    }
+
+
     public function findUserByID($userId)
     {
-        $adminRoleId = config('roles.admin');
-        $superAdminRoleId = config('roles.superadmin');
+        return $this->userRepository->find($userId);
+    }
 
-        return in_array($userType, [$adminRoleId, $superAdminRoleId]);
+    public function getUsersByEmail($emails)
+    {
+        return $this->userRepository->getUsersByEmail($emails);
+    }
+
+    public function findUserByEmail($email)
+    {
+        return $this->userRepository->findUserByEmail($email);
+    }
+
+    public function getUserIdsByEmail($emails)
+    {
+        return $this->userRepository->getUserIdsByEmails($emails);
+    }
+
+    public function getUserPaginatedJobs($user)
+    {
+        return $this->userRepository->getUserPaginatedJobs($user);
+    }
+
+    public function getUserByJob($job) {
+        return $this->userRepository->getUserByJob($job);
+
     }
 }
