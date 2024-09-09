@@ -40,6 +40,10 @@ The original `BookingController.php` and `BookingRepository.php` were functionin
 - **DRY Principle**:  
   By eliminating duplicate code, the application is now more efficient and streamlined.
 
+- **Introduced Utilities**:  
+  I’ve also added some general utilities to make things smoother and more consistent, helping with common tasks and keeping the codebase cleaner and easier to manage.
+
+
 ### What can be improved
 
 Some functions are still in the `BookingRepository`. These should be moved to their respective services and repositories to complete the refactoring process.
