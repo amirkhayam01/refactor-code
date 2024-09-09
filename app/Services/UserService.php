@@ -65,8 +65,13 @@ class UserService
         return $this->userRepository->getUserPaginatedJobs($user);
     }
 
+
+    public function getUserJobs($user) {
+        return $this->userRepository->getUserJobs($user);
+
+    }
+
     public function getUserByJob($job) {
         return $this->userRepository->getUserByJob($job);
-
     }
 }

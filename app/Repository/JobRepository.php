@@ -173,10 +173,21 @@ class JobRepository extends BaseRepository
         return Job::isTranslatorAlreadyBooked($job_id, $userId, $job_due);
     }
 
-    
+
     public function getJobCustomer($job)
     {
         return $job->user()->first();
     }
 
+    public function fetchJobs($userId, $jobType, $userLanguages, $userMeta)
+    {
+        return Job::getJobs(
+            $userId,
+            $jobType,
+            'pending',
+            $userLanguages,
+            $userMeta->gender,
+            $userMeta->translator_level
+        );
+    }
 }

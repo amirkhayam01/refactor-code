@@ -4,6 +4,7 @@ namespace DTApi\Services;
 
 use DTApi\Repository\BookingRepository;
 use DTApi\Services\NotificationService;
+use DTApi\Services\Utilities\BookingUtility;
 
 class BookingService
 {
@@ -13,18 +14,22 @@ class BookingService
     public $jobService;
     public $distanceService;
     public $notificationService;
+    public $bookingUtility;
     public function __construct(
         BookingRepository $bookingRepository,
         UserService $userService,
         JobService $jobService,
         DistanceService $distanceService,
-        NotificationService $notificationService
+        NotificationService $notificationService,
+        BookingUtility $bookingUtility
+
     ) {
         $this->bookingRepository = $bookingRepository;
         $this->userService = $userService;
         $this->jobService = $jobService;
         $this->distanceService = $distanceService;
         $this->notificationService = $notificationService;
+        $this->bookingUtility = $bookingUtility;
     }
 
     public function index($request)
@@ -50,10 +55,29 @@ class BookingService
     }
 
 
-    public function store($request)
+    public function store($user, $request)
     {
         $data = $request->all();
-        return $this->bookingRepository->store($request->__authenticatedUser, $data);
+
+        $this->bookingUtility->validateSaveJobData($data);
+
+        $this->bookingUtility->processJobTiming($data);
+
+        $this->bookingUtility->handleJobFor($data);
+
+        $data['job_type'] = $this->bookingUtility->getJobTypeByConsumer($user->userMeta->consumer_type);
+
+        $data['b_created_at'] = now();
+        if (isset($data['due'])) {
+            $data['will_expire_at'] = TeHelper::willExpireAt($data['due'], $data['b_created_at']);
+        }
+
+        $job = $this->jobService->store($data);
+
+        return [
+            'status' => 'success',
+            'id' => $job->id,
+        ];
     }
 
 
@@ -68,10 +92,28 @@ class BookingService
     public function immediateJobEmail($request)
     {
         $data = $request->all();
-        $response =  $this->bookingRepository->storeJobEmail($data);
+        $job = $this->jobService->findJobByID($data['user_email_job_id']);
+        $user = $job->user()->first();
+
+        $this->jobService->updateJobDetails($job, $data, $user);
+        $this->jobService->sendJobCreatedEmail($job, $user);
+
+        $response =    [
+            'type' => $data['user_type'],
+            'job' => $job,
+            'status' => 'success'
+        ];
+        $this->fireJobCreatedEvent($job);
 
         return $response;
     }
+
+    private function fireJobCreatedEvent($job)
+    {
+        $data = $this->bookingUtility->jobToData($job);
+        Event::fire(new JobWasCreated($job, $data, '*'));
+    }
+
 
 
     public function getHistory($request)
@@ -86,47 +128,17 @@ class BookingService
 
         if ($cuser) {
             if ($cuser->is('customer')) {
-                return $this->handleCustomer($cuser);
+                $jobs = $this->userService->getUserPaginatedJobs($cuser);
+                return $this->bookingUtility->prepareHandleCustomerData($jobs, $cuser);
             } elseif ($cuser->is('translator')) {
-                return $this->handleTranslator($cuser, $page);
+                $jobsIds = $this->jobService->getTranslatorJobsHistoric($cuser->id, $page);
+
+                return $this->bookingUtility->prepareHandleTransferData($jobsIds, $cuser, $page);
             }
         }
 
         return null;
     }
-
-    private function handleCustomer($cuser)
-    {
-        $jobs = $this->userService->getUserPaginatedJobs($cuser);
-
-        return [
-            'emergencyJobs' => [],
-            'noramlJobs' => [],
-            'jobs' => $jobs,
-            'cuser' => $cuser,
-            'usertype' => 'customer',
-            'numpages' => 0,
-            'pagenum' => 1
-        ];
-    }
-
-    private function handleTranslator($cuser, $pagenum)
-    {
-        $jobsIds = $this->jobService->getTranslatorJobsHistoric($cuser->id, $pagenum);
-        $totalJobs = $jobsIds->total();
-        $numPages = ceil($totalJobs / 15);
-
-        return [
-            'emergencyJobs' => [],
-            'noramlJobs' => $jobsIds,
-            'jobs' => $jobsIds,
-            'cuser' => $cuser,
-            'usertype' => 'translator',
-            'numpages' => $numPages,
-            'pagenum' => $pagenum
-        ];
-    }
-
 
 
     public function acceptJob($request)
@@ -196,11 +208,11 @@ class BookingService
         if ($hoursDifference > 24) {
             $this->jobService->markJobPendingAndReassign($job, $translator);
             $this->notifyCustomerOfCancellation($job);
-            $data = $this->jobService->jobToData($job);
+            $data = $this->bookingUtility->jobToData($job);
 
 
             // Notify other translators
-            $this->notificationService->sendNotificationTranslator($job,$data, $translator->id);
+            $this->notificationService->sendNotificationTranslator($job, $data, $translator->id);
 
             $response['status'] = 'success';
         } else {
@@ -348,7 +360,7 @@ class BookingService
     {
         $data = $request->all();
         $job = $this->bookingRepository->find($data['jobid']);
-        $job_data = $this->bookingRepository->jobToData($job);
+        $job_data = $this->bookingUtility->jobToData($job);
         $this->bookingRepository->sendNotificationTranslator($job, $job_data, '*');
 
         return ['success' => 'Push sent'];
@@ -359,7 +371,7 @@ class BookingService
     {
         $data = $request->all();
         $job = $this->bookingRepository->find($data['jobid']);
-        $job_data = $this->bookingRepository->jobToData($job);
+        $job_data = $this->bookingUtility->jobToData($job);
 
         try {
             $this->bookingRepository->sendSMSNotificationToTranslator($job);
